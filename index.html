@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Xbox Mirror</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #000;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain; /* Keeps aspect ratio perfect */
+        }
+        #error-msg {
+            color: white;
+            font-family: sans-serif;
+            position: absolute;
+            text-align: center;
+            padding: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="error-msg">Connecting to Xbox... Please tap screen if audio doesn't start.</div>
+    <video id="xbox-view" autoplay playsinline></video>
+
+    <script>
+        async function startXboxStream() {
+            const videoElement = document.getElementById('xbox-view');
+            const errorElement = document.getElementById('error-msg');
+
+            try {
+                // Ask for permissions and look for video/audio devices
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                
+                // Try to find a device that looks like a USB Capture Card
+                let videoDeviceId = null;
+                for (const device of devices) {
+                    if (device.kind === 'videoinput' && 
+                       (device.label.toLowerCase().includes('video') || device.label.toLowerCase().includes('cam') || device.label.toLowerCase().includes('capture'))) {
+                        videoDeviceId = device.deviceId;
+                        break;
+                    }
+                }
+
+                // Setup constraints (Prefer the external card, fallback to default if not specific)
+                const constraints = {
+                    video: videoDeviceId ? { deviceId: { exact: videoDeviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } } : { facingMode: "environment" },
+                    audio: true // Captures game sound from the dongle
+                };
+
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                videoElement.srcObject = stream;
+                errorElement.style.display = 'none'; // Hide message on success
+
+            } catch (error) {
+                console.error("Error accessing capture card: ", error);
+                errorElement.innerText = "Error: Make sure the USB-C capture card is plugged into your Xbox and iPad, and you grant Camera/Microphone access.";
+            }
+        }
+
+        // Start stream when page loads
+        window.addEventListener('DOMContentLoaded', startXboxStream);
+
+        // Interaction fallback (Browsers require a click/tap to play live audio)
+        window.addEventListener('click', () => {
+            const videoElement = document.getElementById('xbox-view');
+            if (videoElement.paused) videoElement.play();
+        });
+    </script>
+</body>
+</html>
