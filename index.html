@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Console Display</title>
+    <title>Console Display (Low Latency)</title>
     <style>
         body, html {
             margin: 0;
@@ -21,6 +21,7 @@
             width: 100%;
             height: 100%;
             object-fit: contain;
+            transform: translateZ(0); /* Forces hardware GPU acceleration */
         }
         #controls {
             position: absolute;
@@ -56,44 +57,58 @@
 
     <div id="controls">
         <select id="video-select"></select>
-        <button onclick="document.getElementById('controls').style.display='none'">Hide Menu</button>
+        <select id="res-select">
+            <option value="720" selected>720p (Fastest / Low Lag)</option>
+            <option value="1080">1080p (High Quality)</option>
+            <option value="480">480p (Ultra Fast)</option>
+        </select>
+        <button onclick="document.getElementById('controls').style.display='none'">Hide</button>
     </div>
 
-    <div id="status-msg">Initializing capture card... Tap screen for audio.</div>
-    <video id="console-view" autoplay playsinline></video>
+    <div id="status-msg">Connecting to console...</div>
+    <video id="console-view" autoplay playsinline muted></video>
 
     <script>
         let currentStream = null;
         const videoElement = document.getElementById('console-view');
         const videoSelect = document.getElementById('video-select');
+        const resSelect = document.getElementById('res-select');
         const statusMsg = document.getElementById('status-msg');
+
+        function getVideoConstraints(deviceId) {
+            const res = resSelect.value;
+            let width = 1280, height = 720;
+            if (res === '1080') { width = 1920; height = 1080; }
+            if (res === '480') { width = 854; height = 480; }
+
+            const base = {
+                width: { ideal: width },
+                height: { ideal: height },
+                frameRate: { ideal: 60, max: 60 }
+            };
+
+            return deviceId ? { ...base, deviceId: { exact: deviceId } } : base;
+        }
 
         async function startStream(deviceId = null) {
             if (currentStream) {
                 currentStream.getTracks().forEach(track => track.stop());
             }
 
-            const constraints = {
-                video: deviceId 
-                    ? { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
-                    : true,
-                audio: true
-            };
-
             try {
-                currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+                currentStream = await navigator.mediaDevices.getUserMedia({
+                    video: getVideoConstraints(deviceId),
+                    audio: false
+                });
                 videoElement.srcObject = currentStream;
                 statusMsg.style.display = 'none';
             } catch (err) {
-                statusMsg.innerText = "Error: Check adapter connection and allow Camera/Mic permissions.";
+                statusMsg.innerText = "Error: Check adapter connection and allow Camera permissions.";
             }
         }
 
         async function init() {
-            // 1. Trigger initial permission so Safari reveals device names
             await startStream();
-
-            // 2. Now list all unlocked video devices
             const devices = await navigator.mediaDevices.enumerateDevices();
             const videoInputs = devices.filter(d => d.kind === 'videoinput');
 
@@ -106,33 +121,26 @@
                 option.text = device.label || `Camera ${index + 1}`;
                 videoSelect.appendChild(option);
 
-                // Look for external USB adapter (ignore built-in front/back iPad cameras)
                 const label = device.label.toLowerCase();
                 if (!label.includes('front') && !label.includes('back') && !label.includes('ipad')) {
                     captureCardId = device.deviceId;
                 }
             });
 
-            // 3. Auto-switch to the capture card if detected
             if (captureCardId) {
                 videoSelect.value = captureCardId;
                 await startStream(captureCardId);
             }
         }
 
-        // Allow manual switching from the dropdown menu
-        videoSelect.addEventListener('change', (e) => {
-            startStream(e.target.value);
-        });
+        videoSelect.addEventListener('change', () => startStream(videoSelect.value));
+        resSelect.addEventListener('change', () => startStream(videoSelect.value));
 
-        // Tap anywhere to unmute audio or bring back hidden menu
         window.addEventListener('click', (e) => {
             if (videoElement.paused) videoElement.play();
             if (e.target === videoElement) {
                 const controls = document.getElementById('controls');
-                if (controls.style.display === 'none') {
-                    controls.style.display = 'flex';
-                }
+                if (controls.style.display === 'none') controls.style.display = 'flex';
             }
         });
 
